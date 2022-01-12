@@ -1,112 +1,205 @@
-package huffman;
 
-import huffman.tree.Node;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.PriorityQueue;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.Comparator;
 
-import java.util.*;
-/**
- * The class implementing the Huffman coding algorithm.
- */
 public class Huffman {
+	private String orgStr, encodedStr, decodedStr;
+	public HashMap<Character, Integer> hmapWC;  // for occurrence count
+	public HashMap<Character, String> hmapCode; // for code(character/code)
+	public HashMap<String, Character> hmapCodeR; // for code(code/character)
+	private PriorityQueue<node> pq;  // for MinHeap
+	private int counter;  // Unique id assigned to each node
+	private int treeSize;  // # of total nodes in the tree
+	private node root;
 
-    /**
-     * Build the frequency table containing the unique characters from the String `input' and the number of times
-     * that character occurs.
-     *
-     * @param   input   The string.
-     * @return          The frequency table.
-     */
-    public static Map<Character, Integer> freqTable (String input) {
-        throw new UnsupportedOperationException("Method not implemented");
+	// Inner class
+	private class node{
+		int uid, weight;
+		char ch;
+		node left, right;
+		
+		// Constructor for class node
+		private node(Character ch, Integer weight, node left, node right){
+			uid = ++counter;
+			this.weight = weight;
+			this.ch = ch;
+			this.left = left;
+			this.right = right;
+		}	
+	}
+	
+	// Constructor for class Huffman
+	public Huffman(String orgStr, boolean show, String dotfilename){
+		this.counter = 0;
+		this.treeSize = 0;
+		this.orgStr = orgStr;
+		hmapWC = new HashMap<Character, Integer>();
+		hmapCode = new HashMap<Character, String>();
+		hmapCodeR = new HashMap<String, Character>();
+		pq = new PriorityQueue<node>(1, new Comparator<node>() {
+	        @Override
+	        public int compare(node n1, node n2) {
+	        	if (n1.weight < n2.weight)
+	        		return -1;
+	        	else if (n1.weight > n2.weight)
+	        		return 1;
+	        	return 0;
+	        }
+	    });
+		
+		countWord();  // STEP 1: Count frequency of word
+		buildTree();  // STEP 2: Build Huffman Tree
+		writeDot(dotfilename);  // STEP 3: Write .dot file to visualize the tree with Graphviz software
+		buildCodeTable();  // STEP 4: Build Huffman Code Table
+	}
+		
+	private void buildCodeTable(){
+		String code = "";
+		node n = root;
+		buildCodeRecursion(n, code);  // Recursion
+	}
+	
+	private void buildCodeRecursion(node n, String code){
+		if (n != null){
+			if (! isLeaf(n)){  // n = internal node
+				buildCodeRecursion(n.left, code + '0');
+				buildCodeRecursion(n.right, code + '1');
+			}
+			else{  // n = Leaf node
+				hmapCode.put(n.ch, code); // for {character:code}
+				hmapCodeR.put(code, n.ch); // for {code:character}
+			}
+		}
+	}
+	
+	private void writeDot(String fname){
+		if (treeSize > 1){
+			node n = root;
+			try (PrintWriter o = new PrintWriter(new BufferedWriter (new FileWriter(fname)))){
+				o.println("## Command to generate pdf:  dot -Tpdf test.dot -o test.pdf");
+				o.println("digraph g {");
+				dotWriteRecursion(n, o);  // Recursion
+				o.println("}");
+			}
+			catch (IOException e){
+				System.out.println(e);
+			}
+		}
+	}
+	
+	private void dotWriteRecursion(node n, PrintWriter o){
+		if (! isLeaf(n)){
+			if (n.left != null){  // has left kid
+				String t = "";
+				char c = n.left.ch;
+				if (c != '\0' && c != ' ' && c != '"' && c!= '\n')  // regular characters
+					t = "\\n " + c; 
+				else if (c == ' ') 
+					t = "\\n blank";
+				else if (c == '"')  //escape "
+					t = "\\n \\\"";
+				else if (c == '\n') 
+					t = "\\n /n";
+				o.println(" \"" + n.uid + "\\n" + n.weight + "\" -> \"" + n.left.uid + "\\n" + n.left.weight + t + "\" [color=red, label=0]");
+				dotWriteRecursion(n.left, o);
+			}
+			if (n.right != null){ // has right kid
+				String t = "";
+				char c = n.right.ch;	
+				if (c != '\0' && c != ' ' && c != '"' && c != '\n') // regular characters
+					t = "\\n " + c;
+				else if (c == ' ')
+					t = "\\n blank"; 
+				else if (c == '"')  //escape
+					t = "\\n \\\"";
+				else if (c == '\n')
+					t = "\\n /n";
+				o.println(" \"" + n.uid + "\\" +"n" + n.weight + "\" -> \"" + n.right.uid + "\\n" + n.right.weight + t + "\" [color=blue, label=1]");
+				dotWriteRecursion(n.right, o);
+			}
+		}
+	}
+		
+	private void buildTree(){
+		buildMinHeap();  // Set all leaf nodes into MinHeap
+		node left, right;
+		while (! pq.isEmpty()){
+			left = pq.poll(); treeSize++;
+			if (pq.peek() != null){
+				right = pq.poll();  treeSize++;
+				root = new node('\0', left.weight + right.weight, left, right);
+			}
+			else{  // only left child. right=null
+				root = new node('\0', left.weight, left, null);
+			}
+			
+			if (pq.peek() != null){
+				pq.offer(root);
+			}
+			else{  // = Top root. Finished building the tree.
+				treeSize++;
+				break;
+			}
+		}
+	}
+	
+	private void buildMinHeap(){
+		for (Map.Entry<Character, Integer> entry: hmapWC.entrySet()){
+			Character ch = entry.getKey();
+	        Integer weight = entry.getValue();
+	        node n = new node(ch, weight, null, null);
+	        pq.offer(n);
+		}		
+	}
+	
+	private void countWord(){
+		Character ch;
+		Integer weight;
+		for (int i=0; i<orgStr.length(); i++){
+			ch = new Character(orgStr.charAt(i));
+			if (hmapWC.containsKey(ch) == false)
+				weight = new Integer(1);
+			else
+				weight = hmapWC.get(ch) + 1;
+			hmapWC.put(ch, weight);
+		}
+	}
+	
+	private boolean isLeaf(node n) {
+        return (n.left == null) && (n.right == null);
     }
-
-    /**
-     * Given a frequency table, construct a Huffman tree.
-     *
-     * First, create an empty priority queue.
-     *
-     * Then make every entry in the frequency table into a leaf node and add it to the queue.
-     *
-     * Then, take the first two nodes from the queue and combine them in a branch node that is
-     * labelled by the combined frequency of the nodes and put it back in the queue. The right hand
-     * child of the new branch node should be the node with the larger frequency of the two.
-     *
-     * Do this repeatedly until there is a single node in the queue, which is the Huffman tree.
-     *
-     * @param freqTable The frequency table.
-     * @return          A Huffman tree.
-     */
-    public static Node treeFromFreqTable(Map<Character, Integer> freqTable) {
-        throw new UnsupportedOperationException("Method not implemented");
-    }
-
-    /**
-     * Construct the map of characters and codes from a tree. Just call the traverse
-     * method of the tree passing in an empty list, then return the populated code map.
-     *
-     * @param tree  The Huffman tree.
-     * @return      The populated map, where each key is a character, c, that maps to a list of booleans
-     *              representing the path through the tree from the root to the leaf node labelled c.
-     */
-    public static Map<Character, List<Boolean>> buildCode(Node tree) {
-        throw new UnsupportedOperationException("Method not implemented");
-    }
-
-    /**
-     * Create the huffman coding for an input string by calling the various methods written above. I.e.
-     *
-     * + create the frequency table,
-     * + use that to create the Huffman tree,
-     * + extract the code map of characters and their codes from the tree.
-     *
-     * Then to encode the input data, loop through the input looking each character in the map and add
-     * the code for that character to a list representing the data.
-     *
-     * @param input The data to encode.
-     * @return      The Huffman coding.
-     */
-    public static HuffmanCoding encode(String input) {
-        throw new UnsupportedOperationException("Method not implemented");
-    }
-
-    /**
-     * Reconstruct a Huffman tree from the map of characters and their codes. Only the structure of this tree
-     * is required and frequency labels of all nodes can be set to zero.
-     *
-     * Your tree will start as a single Branch node with null children.
-     *
-     * Then for each character key in the code, c, take the list of booleans, bs, corresponding to c. Make
-     * a local variable referring to the root of the tree. For every boolean, b, in bs, if b is false you want to "go
-     * left" in the tree, otherwise "go right".
-     *
-     * Presume b is false, so you want to go left. So long as you are not at the end of the code so you should set the
-     * current node to be the left-hand child of the node you are currently on. If that child does not
-     * yet exist (i.e. it is null) you need to add a new branch node there first. Then carry on with the next entry in
-     * bs. Reverse the logic of this if b is true.
-     *
-     * When you have reached the end of this code (i.e. b is the final element in bs), add a leaf node
-     * labelled by c as the left-hand child of the current node (right-hand if b is true). Then take the next char from
-     * the code and repeat the process, starting again at the root of the tree.
-     *
-     * @param code  The code.
-     * @return      The reconstructed tree.
-     */
-    public static Node treeFromCode(Map<Character, List<Boolean>> code) {
-        throw new UnsupportedOperationException("Method not implemented");
-    }
-
-
-    /**
-     * Decode some data using a map of characters and their codes. To do this you need to reconstruct the tree from the
-     * code using the method you wrote to do this. Then take one boolean at a time from the data and use it to traverse
-     * the tree by going left for false, right for true. Every time you reach a leaf you have decoded a single
-     * character (the label of the leaf). Add it to the result and return to the root of the tree. Keep going in this
-     * way until you reach the end of the data.
-     *
-     * @param code  The code.
-     * @param data  The encoded data.
-     * @return      The decoded string.
-     */
-    public static String decode(Map<Character, List<Boolean>> code, List<Boolean> data) {
-        throw new UnsupportedOperationException("Method not implemented");
-    }
+	
+	public String encode(){
+		StringBuilder sb = new StringBuilder();
+		Character ch;
+		for(int i=0; i<orgStr.length(); i++){
+			ch = orgStr.charAt(i);
+			sb.append(hmapCode.get(ch));
+		}
+		encodedStr = sb.toString();
+		return encodedStr;
+	}
+	
+	public String decode(){
+		StringBuilder sb = new StringBuilder();
+		String t = "";
+		
+		for(int i=0; i<encodedStr.length(); i++){
+			t += encodedStr.charAt(i);
+			if (hmapCodeR.containsKey(t)){
+				sb.append(hmapCodeR.get(t));
+				t = "";
+			}
+		}
+		decodedStr = sb.toString();
+		return decodedStr;
+	}
+	
 }
+
